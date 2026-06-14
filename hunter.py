@@ -6,7 +6,8 @@ import anthropic
 from datetime import datetime, timedelta, timezone
 from telethon import TelegramClient
 from telethon.tl.types import Message
-from telethon.network.connection.tcpmtproxy import ConnectionTcpMTProxyRandomizedIntermediate
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
 API_ID = int(os.environ.get('TG_API_ID', '2040'))
 API_HASH = os.environ.get('TG_API_HASH', '')
@@ -14,7 +15,7 @@ PHONE = os.environ.get('TG_PHONE', '')
 CLAUDE_API_KEY = os.environ.get('CLAUDE_API_KEY', '')
 CLAUDE_PROXY_URL = os.environ.get('CLAUDE_PROXY_URL', '')
 TIMEWEB_API = os.environ.get('TIMEWEB_API', '')
-CHANNELS = os.environ.get('TG_CHANNELS', '').split(',')
+CHANNELS = [c.strip() for c in os.environ.get('TG_CHANNELS', '').split(',') if c.strip()]
 USER_PROFILE = os.environ.get('USER_PROFILE', '')
 
 def score_with_claude(text, profile):
@@ -26,7 +27,7 @@ def score_with_claude(text, profile):
 {profile}
 
 ПОСТ:
-{text}
+{text[:1000]}
 
 Оцени 0-100. Категория: вакансия / проект / подряд / партнёрство / нерелевантно.
 Ответь ТОЛЬКО JSON: {{"score": 75, "reason": "...", "category": "вакансия"}}"""
@@ -43,20 +44,18 @@ def score_with_claude(text, profile):
         print(f"Claude error: {e}")
         return 0, '', ''
 
-async def run():
-    client = TelegramClient('hunter', API_ID, API_HASH)
+async def run_hunter():
+    print(f"Starting hunter, channels: {CHANNELS}")
+    client = TelegramClient('/tmp/hunter', API_ID, API_HASH)
     await client.start(phone=PHONE)
 
     since = datetime.now(timezone.utc) - timedelta(hours=2)
     results = []
 
     for username in CHANNELS:
-        username = username.strip()
-        if not username:
-            continue
         try:
             entity = await client.get_entity(username)
-            messages = await client.get_messages(entity, limit=50)
+            messages = await client.get_messages(entity, limit=30)
             for msg in messages:
                 if not isinstance(msg, Message):
                     continue
@@ -89,9 +88,32 @@ async def run():
                     json={"items": results},
                     timeout=30
                 )
-                print(f"Ingest: {r.json()}")
+                print(f"Ingest result: {r.json()}")
         except Exception as e:
             print(f"Ingest error: {e}")
 
+    return len(results)
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
+        elif self.path == '/run':
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'Hunter started')
+            threading.Thread(target=lambda: asyncio.run(run_hunter())).start()
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+    def log_message(self, format, *args):
+        pass
+
 if __name__ == '__main__':
-    asyncio.run(run())
+    port = int(os.environ.get('PORT', 8080))
+    print(f"Starting HTTP server on port {port}")
+    server = HTTPServer(('0.0.0.0', port), Handler)
+    server.serve_forever()
