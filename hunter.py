@@ -5,6 +5,7 @@ import httpx
 import anthropic
 from datetime import datetime, timedelta, timezone
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 from telethon.tl.types import Message
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
@@ -12,6 +13,7 @@ import threading
 API_ID = int(os.environ.get('TG_API_ID', '2040'))
 API_HASH = os.environ.get('TG_API_HASH', '')
 PHONE = os.environ.get('TG_PHONE', '')
+SESSION_STRING = os.environ.get('TG_SESSION_STRING', '')
 CLAUDE_API_KEY = os.environ.get('CLAUDE_API_KEY', '')
 CLAUDE_PROXY_URL = os.environ.get('CLAUDE_PROXY_URL', '')
 TIMEWEB_API = os.environ.get('TIMEWEB_API', '')
@@ -44,10 +46,23 @@ def score_with_claude(text, profile):
         print(f"Claude error: {e}")
         return 0, '', ''
 
-async def run_hunter():
-    print(f"Starting hunter, channels: {CHANNELS}")
-    client = TelegramClient('/tmp/hunter', API_ID, API_HASH)
+async def get_session_string():
+    print("Generating session string...")
+    client = TelegramClient(StringSession(), API_ID, API_HASH)
     await client.start(phone=PHONE)
+    session = client.session.save()
+    print(f"SESSION_STRING={session}")
+    await client.disconnect()
+    return session
+
+async def run_hunter():
+    if not SESSION_STRING:
+        print("No TG_SESSION_STRING — run /auth first")
+        return 0
+
+    print(f"Starting hunter, channels: {CHANNELS}")
+    client = TelegramClient(StringSession(SESSION_STRING), API_ID, API_HASH)
+    await client.connect()
 
     since = datetime.now(timezone.utc) - timedelta(hours=2)
     results = []
@@ -74,7 +89,7 @@ async def run_hunter():
                         "category": category,
                         "posted_at": msg.date.isoformat()
                     })
-                    print(f"[{username}] id={msg.id} score={score} cat={category}")
+                    print(f"[{username}] score={score} cat={category}")
         except Exception as e:
             print(f"[{username}] error: {e}")
 
@@ -88,7 +103,7 @@ async def run_hunter():
                     json={"items": results},
                     timeout=30
                 )
-                print(f"Ingest result: {r.json()}")
+                print(f"Ingest: {r.json()}")
         except Exception as e:
             print(f"Ingest error: {e}")
 
@@ -114,6 +129,6 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    print(f"Starting HTTP server on port {port}")
+    print(f"HTTP server on port {port}")
     server = HTTPServer(('0.0.0.0', port), Handler)
     server.serve_forever()
