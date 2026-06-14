@@ -1,0 +1,4 @@
+telethon==1.43.2
+anthropic
+httpx
+python-dotenv
