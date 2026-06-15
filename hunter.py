@@ -61,7 +61,7 @@ async def run_hunter():
     for username in CHANNELS:
         log(f"Scanning [{username}]...")
         try:
-            entity = await client.get_entity('https://t.me/' + username)
+            entity = await client.get_input_entity('https://t.me/' + username)
             messages = await client.get_messages(entity, limit=30)
             log(f"[{username}] got {len(messages)} messages")
             for msg in messages:
