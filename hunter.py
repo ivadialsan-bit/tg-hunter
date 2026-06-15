@@ -121,7 +121,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
+    port = int(os.environ.get('PORT', 10000))
     print(f"HTTP server on port {port}")
     server = HTTPServer(('0.0.0.0', port), Handler)
     server.serve_forever()
